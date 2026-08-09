@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Frontend & Node API Service (Production)
+  frontend:
+    build:
+      context: ..
+      dockerfile: dockerfiles/frontend.prod.Dockerfile
+    container_name: movieseat-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BACKEND_URL=http://backend:8085
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Java Spring Boot Microservice (Production)
+  backend:
+    build:
+      context: ..
+      dockerfile: dockerfiles/backend.prod.Dockerfile
+    container_name: movieseat-backend
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/movieseat
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres_dev_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Prometheus Telemetry Collector
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: movieseat-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - frontend
+
+  # Grafana Visualization Dashboard
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: movieseat-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+  # PostgreSQL Relational Database
+  postgres:
+    image: postgres:16
+    container_name: movieseat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-movieseat}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-movieseat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

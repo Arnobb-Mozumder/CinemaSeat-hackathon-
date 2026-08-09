@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+
+  # Frontend & Node API Service (Development)
+  frontend:
+    build:
+      context: ..
+      dockerfile: dockerfiles/frontend.dev.Dockerfile
+    container_name: movieseat-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - BACKEND_URL=http://backend:8085
+    volumes:
+      - ..:/app
+      - ../images:/app/public/images:ro
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Java Spring Boot Microservice (Development)
+  backend:
+    build:
+      context: ..
+      dockerfile: dockerfiles/backend.dev.Dockerfile
+    container_name: movieseat-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/movieseat
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres_dev_password
+    volumes:
+      - ../backend:/app/backend
+      - /app/backend/target
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Prometheus Telemetry Collector
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: movieseat-prometheus-dev
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - frontend
+
+  # Grafana Visualization Dashboard
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: movieseat-grafana-dev
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+  # PostgreSQL Relational Database
+  postgres:
+    image: postgres:16
+    container_name: movieseat-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-movieseat}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-movieseat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
