@@ -125,7 +125,7 @@
         "y": 0
       },
       "id": 4,
-      "title": "Total Revenue (USD)",
+      "title": "Total Revenue (Taka)",
       "type": "stat",
       "targets": [
         {
@@ -147,7 +147,7 @@
               { "color": "emerald", "value": null }
             ]
           },
-          "unit": "currencyUSD"
+          "unit": "currencyBDT"
         }
       }
     },

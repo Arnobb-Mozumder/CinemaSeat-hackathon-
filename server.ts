@@ -4,8 +4,12 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import client from 'prom-client';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const safeFilename = typeof __filename !== 'undefined'
+  ? __filename
+  : (typeof import.meta !== 'undefined' && import.meta && import.meta.url ? fileURLToPath(import.meta.url) : '');
+const safeDirname = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (safeFilename ? path.dirname(safeFilename) : process.cwd());
 
 const app = express();
 const PORT = parseInt(process.env.PORT || process.env.SERVER_PORT || '3000', 10);
@@ -44,6 +48,58 @@ export const bookingRevenueUSD = new client.Counter({
   name: 'movieseat_booking_revenue_usd',
   help: 'Total revenue generated in USD',
 });
+
+// Track which bookings have had metrics recorded to ensure idempotency
+const confirmedBookingMetricsRecorded = new Set<string>();
+
+// Initialize default zero metrics so Prometheus scraper outputs non-empty metric series on startup
+ticketsBookedTotal.inc({ movie_id: 'all', format: 'Standard 2D' }, 0);
+bookingRevenueUSD.inc(0);
+
+// Helper to reliably record Prometheus metrics on booking confirmation
+function recordConfirmedBookingMetrics(booking: Booking, hold?: Hold) {
+  if (!booking || booking.status !== 'confirmed') return;
+
+  if (confirmedBookingMetricsRecorded.has(booking.bookingId)) {
+    return; // Already recorded metrics for this booking
+  }
+  confirmedBookingMetricsRecorded.add(booking.bookingId);
+
+  const targetHold = hold || (booking.holdId ? holdStore[booking.holdId] : undefined);
+  const seatMap = targetHold ? seatStore[targetHold.showId] : undefined;
+  const showtime = targetHold ? SHOWTIMES.find((s) => s.id === targetHold.showId) : undefined;
+
+  const movieId =
+    (seatMap && seatMap.show.movieId) ||
+    (showtime && showtime.movieId) ||
+    'unknown';
+
+  const format =
+    booking.format ||
+    (seatMap && seatMap.show.format) ||
+    (showtime && showtime.format) ||
+    'Standard 2D';
+
+  const seatCount =
+    booking.seats && Array.isArray(booking.seats) && booking.seats.length > 0
+      ? booking.seats.length
+      : targetHold && targetHold.seatIds
+      ? targetHold.seatIds.length
+      : 1;
+
+  const amountUSD = booking.totalAmountUSD || (targetHold ? targetHold.totalPriceUSD : 0);
+
+  ticketsBookedTotal.inc({ movie_id: movieId, format }, seatCount);
+  bookingRevenueUSD.inc(amountUSD);
+
+  logDomainEvent('booking_confirmed', {
+    bookingId: booking.bookingId,
+    movieId,
+    format,
+    seatCount,
+    amountUSD,
+  });
+}
 
 // Phase 42: Safe Domain Event Logger
 function logDomainEvent(event: string, details: Record<string, unknown>) {
@@ -1082,6 +1138,7 @@ app.post(['/api/test/reset', '/test/reset'], (_req, res) => {
   Object.keys(seatStore).forEach((k) => delete seatStore[k]);
   Object.keys(clientHoldRequestHistory).forEach((k) => delete clientHoldRequestHistory[k]);
   processedEventIds.clear();
+  confirmedBookingMetricsRecorded.clear();
   Object.keys(earlyCallbacksStore).forEach((k) => delete earlyCallbacksStore[k]);
   res.json({ message: 'State reset successfully' });
 });
@@ -1394,9 +1451,7 @@ app.post(['/api/payments', '/payments'], (req, res) => {
 
   logDomainEvent('payment_created', { paymentId, holdId, amountUSD: totalUSD });
   if (booking.status === 'confirmed') {
-    ticketsBookedTotal.inc({ movie_id: movie?.id || 'unknown', format: show?.format || '2D' }, seatIds.length);
-    bookingRevenueUSD.inc(totalUSD);
-    logDomainEvent('booking_confirmed', { bookingId, showId: hold.showId });
+    recordConfirmedBookingMetrics(booking, hold);
   } else if (booking.status === 'failed') {
     logDomainEvent('booking_failed', { bookingId, holdId, paymentId });
   }
@@ -1427,6 +1482,8 @@ app.post(['/api/payments', '/payments'], (req, res) => {
             }
           });
         }
+
+        recordConfirmedBookingMetrics(booking, hold);
       }
     }, 800);
   }
@@ -1488,6 +1545,9 @@ app.post(['/api/payments/callback', '/payments/callback'], (req, res) => {
 
   if (booking) {
     booking.status = isSuccess ? 'confirmed' : 'failed';
+    if (isSuccess) {
+      recordConfirmedBookingMetrics(booking, hold);
+    }
   }
 
   // Only transition hold & seats if booking/paymentRecord already existed

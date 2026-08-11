@@ -5,6 +5,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  role: 'guest' | 'admin';
   avatarUrl?: string;
 }
 
@@ -12,7 +13,10 @@ export interface AuthContextType {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
+  loginAsGuest: (email?: string, name?: string) => Promise<void>;
+  loginAsAdmin: (username: string, password: string) => Promise<boolean>;
   login: (email?: string, name?: string) => Promise<void>;
   logout: () => void;
 }
@@ -24,7 +28,10 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   token: null,
   isAuthenticated: false,
+  isAdmin: false,
   isLoading: true,
+  loginAsGuest: async () => {},
+  loginAsAdmin: async () => false,
   login: async () => {},
   logout: () => {},
 });
@@ -59,15 +66,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
-  const login = async (email?: string, name?: string) => {
-    const userEmail = email || 'cinema.viewer@example.com';
-    const userName = name || userEmail.split('@')[0] || 'Cinema Fan';
-    const generatedToken = `mock_bearer_token_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+  const loginAsGuest = async (email?: string, name?: string) => {
+    const userEmail = email || 'guest.viewer@cinemaseat.com';
+    const userName = name || userEmail.split('@')[0] || 'Guest User';
+    const generatedToken = `mock_guest_token_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
 
     const newUser: User = {
-      id: `usr-${Date.now().toString(36)}`,
+      id: `usr-guest-${Date.now().toString(36)}`,
       email: userEmail,
       name: userName,
+      role: 'guest',
       avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80`,
     };
 
@@ -83,6 +91,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginAsAdmin = async (username: string, password: string): Promise<boolean> => {
+    if (username.trim() === 'admin' && password === 'admin') {
+      const generatedToken = `mock_admin_token_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+      const adminUser: User = {
+        id: 'usr-admin-01',
+        email: 'admin@cinemaseat.com',
+        name: 'System Admin',
+        role: 'admin',
+        avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80`,
+      };
+
+      setToken(generatedToken);
+      setUser(adminUser);
+      apiClient.setAuthToken(generatedToken);
+
+      try {
+        localStorage.setItem(STORAGE_TOKEN_KEY, generatedToken);
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(adminUser));
+      } catch {
+        // ignore storage failure
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // Backwards compatible login function defaults to Guest login
+  const login = async (email?: string, name?: string) => {
+    await loginAsGuest(email, name);
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -96,13 +135,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const isAdmin = !!user && user.role === 'admin';
+
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
         isAuthenticated: !!token && !!user,
+        isAdmin,
         isLoading,
+        loginAsGuest,
+        loginAsAdmin,
         login,
         logout,
       }}

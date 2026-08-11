@@ -42,6 +42,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
+          cache-dependency-path: 'backend/pom.xml'
 
       - name: 1. Install Node Dependencies
         run: npm ci
@@ -69,10 +70,10 @@ jobs:
           kill $SERVER_PID
 
       - name: 5. Build Docker Image (Root Full-Stack Container)
-        run: docker build -t cinemaseat-app:latest .
+        run: docker build -t cinemaseat-app:latest -f dockerfiles/frontend.prod.Dockerfile .
 
       - name: 6. Build Backend Docker Image (Spring Boot Service Container)
-        run: docker build -t cinemaseat-backend:latest ./backend
+        run: docker build -t cinemaseat-backend:latest -f dockerfiles/backend.prod.Dockerfile .
 
   deploy-cloud-run:
     name: Deploy to GCP Cloud Run
@@ -98,7 +99,7 @@ jobs:
       - name: Build and Push Production Container
         run: |
           IMAGE_URI="asia-southeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cinemaseat/backend:${{ github.sha }}"
-          docker build -t $IMAGE_URI ./backend
+          docker build -t $IMAGE_URI -f dockerfiles/backend.prod.Dockerfile .
           docker push $IMAGE_URI
 
       - name: Deploy Stateless Backend to Cloud Run

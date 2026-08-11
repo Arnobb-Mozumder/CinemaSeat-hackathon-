@@ -204,7 +204,7 @@ export const TelemetryPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
             <div className="bg-neutral-950/80 border border-neutral-800 rounded-lg p-4 space-y-1">
               <div className="text-xs font-mono text-emerald-400 uppercase">1. Web Application</div>
-              <div className="font-bold text-white text-sm">http://localhost:3000</div>
+              <div className="font-bold text-white text-sm">http://localhost:3002</div>
               <div className="text-xs text-neutral-400">Node Frontend + Express API</div>
             </div>
 
@@ -216,13 +216,13 @@ export const TelemetryPage: React.FC = () => {
 
             <div className="bg-neutral-950/80 border border-neutral-800 rounded-lg p-4 space-y-1">
               <div className="text-xs font-mono text-amber-400 uppercase">3. Prometheus UI</div>
-              <div className="font-bold text-white text-sm">http://localhost:9090</div>
+              <div className="font-bold text-white text-sm">http://localhost:9091</div>
               <div className="text-xs text-neutral-400">Scrapes /metrics & Actuator</div>
             </div>
 
             <div className="bg-neutral-950/80 border border-neutral-800 rounded-lg p-4 space-y-1">
               <div className="text-xs font-mono text-cyan-400 uppercase">4. Grafana Dashboard</div>
-              <div className="font-bold text-white text-sm">http://localhost:3001</div>
+              <div className="font-bold text-white text-sm">http://localhost:3003</div>
               <div className="text-xs text-neutral-400">User: admin / Password: admin</div>
             </div>
           </div>
